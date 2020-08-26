@@ -1,8 +1,4 @@
 # https://www.youtube.com/watch?v=1UMHhJEaVTQ
-# https://github.com/aj-4/newsbot/blob/master/main.py
-
-# python3 -m venv ./venv/
-# source venv/bin/activate
 
 import requests
 from bs4 import BeautifulSoup
