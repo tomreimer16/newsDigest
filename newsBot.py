@@ -1,45 +1,61 @@
 # https://www.youtube.com/watch?v=1UMHhJEaVTQ
 
-import requests
+from requests import get
 from bs4 import BeautifulSoup
 import redis
 from secrets import password
 import datetime
 import time
+from json import dumps
+import re
 
 class news:
     def __init__(self, url, keywords):
         self.url = url
         self.keywords = keywords
-        self.page = requests.get(self.url).text
+        self.page_response = get(self.url)
+        self.page_text = self.page_response.text
         self.db = redis.Redis(host='localhost', port=6379, db=0)
 
     def parse(self):
-        soup = BeautifulSoup(self.page, 'html.parser')
+
+        mappings = {
+        "BBC" : {"href": "^/news/", "url": "https://www.bbc.co.uk"},
+        "Spectator" : {"href": "^/article/", "url": "https://www.spectator.co.uk"}
+        }
+        
         if "bbc.co.uk" in self.url:
-            articles = soup.find_all('a',{'href': True})
-        elif "news.ycombinator.com" in self.url:
-            articles = soup.find_all("a",{"class": "storylink"})
+            source = "BBC"
+        elif "spectator.co.uk" in self.url:
+            source = "Spectator"
         else:
             print("Parser does not know this news source")
             articles=[]
-        self.saved_links = []
+
+        page_soup = BeautifulSoup(self.page_text, 'html.parser')
+        articles = page_soup.find_all( "a", href=re.compile(mappings[source]["href"] ) )
         
+        self.saved_links = {}
 
         for article in articles:
             for keyword in self.keywords:
                 if keyword in article.text:
-                    self.saved_links.append(article)
+                    if mappings[source]["url"] + article['href'] not in self.saved_links:
+                        self.saved_links[article.text] =  mappings[source]["url"] + article['href']
+
     
     def store(self):
         for link in self.saved_links:
-            if "bbc.co.uk" in self.url:
-                self.db.set(link.text, str(link).replace("href=\"/","href=\"https://www.bbc.co.uk/"))
-            else:
-                self.db.set(link.text, str(link))
+            self.db.set(link, self.saved_links[link] )
+            # print("Story:    ", link)
+            # print("Link:    ", self.saved_links[link])
+            # print("-")
 
     def email(self):
-        links = [self.db.get(k) for k in self.db.keys()]
+
+        linkDict = {}
+        for k in self.db.keys():
+            linkDict[k] = self.db.get(k)
 
         # email
         import smtplib
@@ -55,10 +71,12 @@ class news:
         msg["To"] = toEmail
 
         html = """
-            <h4> %s links you might find interesting today:</h4>
-            
-            %s
-        """ % (len(links), b'<br/><br/>'.join(links).decode())
+            <h2> %s links you might find interesting today:</h2>
+
+            <ul>
+                <li>%s</li>
+            </ul>
+        """ % (len(linkDict), b'</li><li>'.join([b'<a href="%s">%s' % (value, key) for (key, value) in linkDict.items()]))
 
         mime = MIMEText(html, 'html')
 
@@ -79,9 +97,13 @@ class news:
 
 
 def main():
-    urls = ['https://www.bbc.co.uk/news/business','https://news.ycombinator.com/','https://www.bbc.co.uk/news/technology']
-    keywords = ['Tesla','Google','Microsoft','Amazon','Facebook','Apple',
-                'Private Equity','Venture Capital']
+    urls = ['https://www.bbc.co.uk/news/business',
+            'https://www.spectator.co.uk',
+            'https://www.bbc.co.uk/news/technology']
+
+    keywords = ['Tesla','Google','Amazon','Apple',
+                'Private Equity','Venture Capital',
+                'Boris','Sutherland']
     
     for url in urls:
         n = news(url, keywords)
