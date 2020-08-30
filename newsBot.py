@@ -110,7 +110,7 @@ def main():
         n.parse()
         n.store()
 
-    if datetime.datetime.now().hour == 17:
+    if datetime.datetime.now().hour == 12:
         n.email()
 
 if __name__ == "__main__":
